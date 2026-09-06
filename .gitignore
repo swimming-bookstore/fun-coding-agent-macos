@@ -6,3 +6,6 @@ DerivedData/
 .DS_Store
 
 /macos/Fun/Generated/*.a
+/.demo-derived/
+/demo/record.log
+/demo/raw.mov
