@@ -1,5 +1,5 @@
-module fun_macos_coreFFI {
-    header "fun_macos_coreFFI.h"
+module fun_gui_coreFFI {
+    header "fun_gui_coreFFI.h"
     export *
     use "Darwin"
     use "_Builtin_stdbool"

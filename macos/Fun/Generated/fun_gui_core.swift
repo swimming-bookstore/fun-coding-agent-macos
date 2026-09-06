@@ -7,8 +7,8 @@ import Foundation
 // Depending on the consumer's build setup, the low-level FFI code
 // might be in a separate module, or it might be compiled inline into
 // this module. This is a bit of light hackery to work with both.
-#if canImport(fun_macos_coreFFI)
-import fun_macos_coreFFI
+#if canImport(fun_gui_coreFFI)
+import fun_gui_coreFFI
 #endif
 
 fileprivate extension RustBuffer {
@@ -25,13 +25,13 @@ fileprivate extension RustBuffer {
     }
 
     static func from(_ ptr: UnsafeBufferPointer<UInt8>) -> RustBuffer {
-        try! rustCall { ffi_fun_macos_core_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
+        try! rustCall { ffi_fun_gui_core_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
     }
 
     // Frees the buffer in place.
     // The buffer must not be used after this is called.
     func deallocate() {
-        try! rustCall { ffi_fun_macos_core_rustbuffer_free(self, $0) }
+        try! rustCall { ffi_fun_gui_core_rustbuffer_free(self, $0) }
     }
 }
 
@@ -663,13 +663,13 @@ open class FunApp: FunAppProtocol, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_fun_macos_core_fn_clone_funapp(self.handle, $0) }
+        return try! rustCall { uniffi_fun_gui_core_fn_clone_funapp(self.handle, $0) }
     }
 public convenience init() {
     let handle =
         try! rustCall() {
         uniffiCallStatus in
-    uniffi_fun_macos_core_fn_constructor_funapp_new(uniffiCallStatus
+    uniffi_fun_gui_core_fn_constructor_funapp_new(uniffiCallStatus
     )
 }
     self.init(unsafeFromHandle: handle)
@@ -681,7 +681,7 @@ public convenience init() {
             return
         }
 
-        try! rustCall { uniffi_fun_macos_core_fn_free_funapp(handle, $0) }
+        try! rustCall { uniffi_fun_gui_core_fn_free_funapp(handle, $0) }
     }
 
     
@@ -689,7 +689,7 @@ public convenience init() {
     
 open func abort()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_fun_macos_core_fn_method_funapp_abort(
+    uniffi_fun_gui_core_fn_method_funapp_abort(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -697,7 +697,7 @@ open func abort()  {try! rustCall() {
     
 open func addFolder(workspace: String)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_fun_macos_core_fn_method_funapp_add_folder(
+    uniffi_fun_gui_core_fn_method_funapp_add_folder(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(workspace),uniffiCallStatus
     )
@@ -706,7 +706,7 @@ open func addFolder(workspace: String)  {try! rustCall() {
     
 open func dismissLogin()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_fun_macos_core_fn_method_funapp_dismiss_login(
+    uniffi_fun_gui_core_fn_method_funapp_dismiss_login(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -714,7 +714,7 @@ open func dismissLogin()  {try! rustCall() {
     
 open func dismissToast()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_fun_macos_core_fn_method_funapp_dismiss_toast(
+    uniffi_fun_gui_core_fn_method_funapp_dismiss_toast(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -722,7 +722,7 @@ open func dismissToast()  {try! rustCall() {
     
 open func interrupt(text: String)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_fun_macos_core_fn_method_funapp_interrupt(
+    uniffi_fun_gui_core_fn_method_funapp_interrupt(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(text),uniffiCallStatus
     )
@@ -731,7 +731,7 @@ open func interrupt(text: String)  {try! rustCall() {
     
 open func loginGrok()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_fun_macos_core_fn_method_funapp_login_grok(
+    uniffi_fun_gui_core_fn_method_funapp_login_grok(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -739,7 +739,7 @@ open func loginGrok()  {try! rustCall() {
     
 open func logoutGrok()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_fun_macos_core_fn_method_funapp_logout_grok(
+    uniffi_fun_gui_core_fn_method_funapp_logout_grok(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -747,7 +747,7 @@ open func logoutGrok()  {try! rustCall() {
     
 open func newChat()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_fun_macos_core_fn_method_funapp_new_chat(
+    uniffi_fun_gui_core_fn_method_funapp_new_chat(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -755,7 +755,7 @@ open func newChat()  {try! rustCall() {
     
 open func openRoom(workspace: String)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_fun_macos_core_fn_method_funapp_open_room(
+    uniffi_fun_gui_core_fn_method_funapp_open_room(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(workspace),uniffiCallStatus
     )
@@ -764,7 +764,7 @@ open func openRoom(workspace: String)  {try! rustCall() {
     
 open func queueDrop(index: UInt32)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_fun_macos_core_fn_method_funapp_queue_drop(
+    uniffi_fun_gui_core_fn_method_funapp_queue_drop(
             self.uniffiCloneHandle(),
         FfiConverterUInt32.lower(index),uniffiCallStatus
     )
@@ -774,7 +774,7 @@ open func queueDrop(index: UInt32)  {try! rustCall() {
 open func queueEdit(index: UInt32) -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
-    uniffi_fun_macos_core_fn_method_funapp_queue_edit(
+    uniffi_fun_gui_core_fn_method_funapp_queue_edit(
             self.uniffiCloneHandle(),
         FfiConverterUInt32.lower(index),uniffiCallStatus
     )
@@ -783,7 +783,7 @@ open func queueEdit(index: UInt32) -> String  {
     
 open func queueMove(index: UInt32, delta: Int32)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_fun_macos_core_fn_method_funapp_queue_move(
+    uniffi_fun_gui_core_fn_method_funapp_queue_move(
             self.uniffiCloneHandle(),
         FfiConverterUInt32.lower(index),
         FfiConverterInt32.lower(delta),uniffiCallStatus
@@ -793,7 +793,7 @@ open func queueMove(index: UInt32, delta: Int32)  {try! rustCall() {
     
 open func queueSendNow(index: UInt32)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_fun_macos_core_fn_method_funapp_queue_send_now(
+    uniffi_fun_gui_core_fn_method_funapp_queue_send_now(
             self.uniffiCloneHandle(),
         FfiConverterUInt32.lower(index),uniffiCallStatus
     )
@@ -802,7 +802,7 @@ open func queueSendNow(index: UInt32)  {try! rustCall() {
     
 open func removeFolder()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_fun_macos_core_fn_method_funapp_remove_folder(
+    uniffi_fun_gui_core_fn_method_funapp_remove_folder(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -810,7 +810,7 @@ open func removeFolder()  {try! rustCall() {
     
 open func shutdown()  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_fun_macos_core_fn_method_funapp_shutdown(
+    uniffi_fun_gui_core_fn_method_funapp_shutdown(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
@@ -818,7 +818,7 @@ open func shutdown()  {try! rustCall() {
     
 open func start(delegate: FunDelegate)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_fun_macos_core_fn_method_funapp_start(
+    uniffi_fun_gui_core_fn_method_funapp_start(
             self.uniffiCloneHandle(),
         FfiConverterTypeFunDelegate_lower(delegate),uniffiCallStatus
     )
@@ -827,7 +827,7 @@ open func start(delegate: FunDelegate)  {try! rustCall() {
     
 open func submit(text: String)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_fun_macos_core_fn_method_funapp_submit(
+    uniffi_fun_gui_core_fn_method_funapp_submit(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(text),uniffiCallStatus
     )
@@ -932,7 +932,7 @@ open class FunDelegateImpl: FunDelegate, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_fun_macos_core_fn_clone_fundelegate(self.handle, $0) }
+        return try! rustCall { uniffi_fun_gui_core_fn_clone_fundelegate(self.handle, $0) }
     }
     // No primary constructor declared for this class.
 
@@ -942,7 +942,7 @@ open class FunDelegateImpl: FunDelegate, @unchecked Sendable {
             return
         }
 
-        try! rustCall { uniffi_fun_macos_core_fn_free_fundelegate(handle, $0) }
+        try! rustCall { uniffi_fun_gui_core_fn_free_fundelegate(handle, $0) }
     }
 
     
@@ -950,7 +950,7 @@ open class FunDelegateImpl: FunDelegate, @unchecked Sendable {
     
 open func onSnapshot(snapshot: Snapshot)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_fun_macos_core_fn_method_fundelegate_on_snapshot(
+    uniffi_fun_gui_core_fn_method_fundelegate_on_snapshot(
             self.uniffiCloneHandle(),
         FfiConverterTypeSnapshot_lower(snapshot),uniffiCallStatus
     )
@@ -1025,7 +1025,7 @@ fileprivate struct UniffiCallbackInterfaceFunDelegate {
 }
 
 private func uniffiCallbackInitFunDelegate() {
-    uniffi_fun_macos_core_fn_init_callback_vtable_fundelegate(UniffiCallbackInterfaceFunDelegate.vtablePtr)
+    uniffi_fun_gui_core_fn_init_callback_vtable_fundelegate(UniffiCallbackInterfaceFunDelegate.vtablePtr)
 }
 
 #if swift(>=5.8)
@@ -1656,65 +1656,65 @@ private let initializationResult: InitializationResult = {
     // Get the bindings contract version from our ComponentInterface
     let bindings_contract_version = 30
     // Get the scaffolding contract version by calling the into the dylib
-    let scaffolding_contract_version = ffi_fun_macos_core_uniffi_contract_version()
+    let scaffolding_contract_version = ffi_fun_gui_core_uniffi_contract_version()
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
-    if (uniffi_fun_macos_core_checksum_method_funapp_abort() != 2633) {
+    if (uniffi_fun_gui_core_checksum_method_funapp_abort() != 2633) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_fun_macos_core_checksum_method_funapp_add_folder() != 59789) {
+    if (uniffi_fun_gui_core_checksum_method_funapp_add_folder() != 59789) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_fun_macos_core_checksum_method_funapp_dismiss_login() != 43929) {
+    if (uniffi_fun_gui_core_checksum_method_funapp_dismiss_login() != 43929) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_fun_macos_core_checksum_method_funapp_dismiss_toast() != 55692) {
+    if (uniffi_fun_gui_core_checksum_method_funapp_dismiss_toast() != 55692) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_fun_macos_core_checksum_method_funapp_interrupt() != 49821) {
+    if (uniffi_fun_gui_core_checksum_method_funapp_interrupt() != 49821) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_fun_macos_core_checksum_method_funapp_login_grok() != 6505) {
+    if (uniffi_fun_gui_core_checksum_method_funapp_login_grok() != 6505) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_fun_macos_core_checksum_method_funapp_logout_grok() != 30695) {
+    if (uniffi_fun_gui_core_checksum_method_funapp_logout_grok() != 30695) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_fun_macos_core_checksum_method_funapp_new_chat() != 11327) {
+    if (uniffi_fun_gui_core_checksum_method_funapp_new_chat() != 11327) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_fun_macos_core_checksum_method_funapp_open_room() != 60020) {
+    if (uniffi_fun_gui_core_checksum_method_funapp_open_room() != 60020) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_fun_macos_core_checksum_method_funapp_queue_drop() != 5538) {
+    if (uniffi_fun_gui_core_checksum_method_funapp_queue_drop() != 5538) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_fun_macos_core_checksum_method_funapp_queue_edit() != 13854) {
+    if (uniffi_fun_gui_core_checksum_method_funapp_queue_edit() != 13854) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_fun_macos_core_checksum_method_funapp_queue_move() != 110) {
+    if (uniffi_fun_gui_core_checksum_method_funapp_queue_move() != 110) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_fun_macos_core_checksum_method_funapp_queue_send_now() != 39860) {
+    if (uniffi_fun_gui_core_checksum_method_funapp_queue_send_now() != 39860) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_fun_macos_core_checksum_method_funapp_remove_folder() != 55688) {
+    if (uniffi_fun_gui_core_checksum_method_funapp_remove_folder() != 55688) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_fun_macos_core_checksum_method_funapp_shutdown() != 53683) {
+    if (uniffi_fun_gui_core_checksum_method_funapp_shutdown() != 53683) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_fun_macos_core_checksum_method_funapp_start() != 20596) {
+    if (uniffi_fun_gui_core_checksum_method_funapp_start() != 20596) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_fun_macos_core_checksum_method_funapp_submit() != 12310) {
+    if (uniffi_fun_gui_core_checksum_method_funapp_submit() != 12310) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_fun_macos_core_checksum_method_fundelegate_on_snapshot() != 37104) {
+    if (uniffi_fun_gui_core_checksum_method_fundelegate_on_snapshot() != 37104) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_fun_macos_core_checksum_constructor_funapp_new() != 36114) {
+    if (uniffi_fun_gui_core_checksum_constructor_funapp_new() != 36114) {
         return InitializationResult.apiChecksumMismatch
     }
 
