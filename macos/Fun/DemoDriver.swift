@@ -1,6 +1,5 @@
 #if FUN_DEMO
 import AppKit
-import SwiftUI
 
 @MainActor
 enum DemoDriver {

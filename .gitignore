@@ -1,11 +1,10 @@
-/rust/target/
-
 xcuserdata/
 DerivedData/
 *.xcuserstate
 .DS_Store
 
 /macos/Fun/Generated/*.a
+/.gui-core/
 /.demo-derived/
 /demo/record.log
 /demo/raw.mov

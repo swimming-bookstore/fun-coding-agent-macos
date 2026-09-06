@@ -10,7 +10,7 @@
 		1000000000000000000021 /* FunApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000001B /* FunApp.swift */; };
 		1000000000000000000022 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000001C /* ContentView.swift */; };
 		1000000000000000000023 /* FunViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000001D /* FunViewModel.swift */; };
-		1000000000000000000025 /* fun_macos_core.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000001F /* fun_macos_core.swift */; };
+		1000000000000000000025 /* fun_gui_core.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000001F /* fun_gui_core.swift */; };
 		1000000000000000000026 /* DemoDriver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1000000000000000000020 /* DemoDriver.swift */; };
 /* End PBXBuildFile section */
 
@@ -20,7 +20,7 @@
 		100000000000000000001C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		100000000000000000001D /* FunViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FunViewModel.swift; sourceTree = "<group>"; };
 		1000000000000000000020 /* DemoDriver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoDriver.swift; sourceTree = "<group>"; };
-		100000000000000000001F /* fun_macos_core.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = fun_macos_core.swift; sourceTree = "<group>"; };
+		100000000000000000001F /* fun_gui_core.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = fun_gui_core.swift; sourceTree = "<group>"; };
 		1000000000000000000028 /* Fun.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Fun.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -67,7 +67,7 @@
 		1000000000000000000019 /* Generated */ = {
 			isa = PBXGroup;
 			children = (
-				100000000000000000001F /* fun_macos_core.swift */,
+				100000000000000000001F /* fun_gui_core.swift */,
 			);
 			path = Generated;
 			sourceTree = "<group>";
@@ -129,28 +129,26 @@
 /* Begin PBXShellScriptBuildPhase section */
 		1000000000000000000030 /* Build Rust core */ = {
 			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 0;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			inputFileListPaths = (
 			);
 			inputPaths = (
-				"$(SRCROOT)/../rust/src/lib.rs",
-				"$(SRCROOT)/../rust/Cargo.toml",
-				"$(SRCROOT)/../rust/scripts/build-macos.sh",
+				"$(SRCROOT)/../scripts/build-core.sh",
 			);
 			name = "Build Rust core";
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(SRCROOT)/Fun/Generated/fun_macos_core.swift",
-				"$(SRCROOT)/Fun/Generated/fun_macos_coreFFI.h",
+				"$(SRCROOT)/Fun/Generated/fun_gui_core.swift",
+				"$(SRCROOT)/Fun/Generated/fun_gui_coreFFI.h",
 				"$(SRCROOT)/Fun/Generated/module.modulemap",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "set -euo pipefail\nexport PATH=\"${HOME}/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:${PATH}\"\n\"${SRCROOT}/../rust/scripts/build-macos.sh\"\n";
+			shellScript = "set -euo pipefail\nexport PATH=\"${HOME}/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:${PATH}\"\n\"${SRCROOT}/../scripts/build-core.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
@@ -173,7 +171,7 @@
 				1000000000000000000021 /* FunApp.swift in Sources */,
 				1000000000000000000022 /* ContentView.swift in Sources */,
 				1000000000000000000023 /* FunViewModel.swift in Sources */,
-				1000000000000000000025 /* fun_macos_core.swift in Sources */,
+				1000000000000000000025 /* fun_gui_core.swift in Sources */,
 				1000000000000000000026 /* DemoDriver.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -260,7 +258,7 @@
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
-					"-lfun_macos_core",
+					"-lfun_gui_core",
 					"-framework",
 					SystemConfiguration,
 					"-framework",
@@ -302,7 +300,7 @@
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
-					"-lfun_macos_core",
+					"-lfun_gui_core",
 					"-framework",
 					SystemConfiguration,
 					"-framework",
