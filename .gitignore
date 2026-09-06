@@ -1,0 +1,8 @@
+/rust/target/
+
+xcuserdata/
+DerivedData/
+*.xcuserstate
+.DS_Store
+
+/macos/Fun/Generated/*.a

@@ -1,0 +1,4 @@
+module fun_macos_coreFFI {
+    header "fun_macos_coreFFI.h"
+    export *
+}
