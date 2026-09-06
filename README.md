@@ -26,3 +26,5 @@ Uses the same config, auth, and sessions as `fun`:
 Depends on `fun-core` and `provider-grok` from https://github.com/swimming-bookstore/fun-coding-agent (not a local checkout).
 
 Not sandboxed — the agent reads and writes the folders you open, same as the CLI.
+
+`python3 scripts/record-demo.py` writes `demo/demo.mp4` (needs `fun login`, Xcode, and a live Grok session).

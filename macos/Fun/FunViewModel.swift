@@ -1,6 +1,5 @@
 import AppKit
 import Foundation
-import SwiftUI
 
 @MainActor
 final class FunViewModel: ObservableObject {
@@ -93,7 +92,11 @@ final class FunViewModel: ObservableObject {
         panel.canCreateDirectories = false
         panel.title = "Open folder"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        app?.addFolder(workspace: url.path)
+        addFolder(url.path)
+    }
+
+    func addFolder(_ path: String) {
+        app?.addFolder(workspace: path)
     }
 
     fileprivate func handleSnapshot(_ snap: Snapshot) {
@@ -110,13 +113,16 @@ final class FunViewModel: ObservableObject {
     private var lastOpenedCode = ""
 }
 
-private final class DelegateBridge: FunDelegate {
-    private weak var owner: FunViewModel?
+private final class DelegateBridge: FunDelegate, @unchecked Sendable {
+    private let hop: @Sendable (Snapshot) -> Void
 
-    init(owner: FunViewModel) { self.owner = owner }
+    init(owner: FunViewModel) {
+        hop = { [weak owner] snapshot in
+            Task { @MainActor in owner?.handleSnapshot(snapshot) }
+        }
+    }
 
     func onSnapshot(snapshot: Snapshot) {
-        let owner = self.owner
-        Task { @MainActor in owner?.handleSnapshot(snapshot) }
+        hop(snapshot)
     }
 }

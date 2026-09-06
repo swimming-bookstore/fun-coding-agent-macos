@@ -38,7 +38,12 @@ struct ContentView: View {
                 .disabled(viewModel.snapshot.empty)
             }
         }
-        .task { viewModel.start() }
+        .task {
+            viewModel.start()
+            #if FUN_DEMO
+            DemoDriver.maybeStart(viewModel: viewModel)
+            #endif
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             viewModel.stop()
         }
@@ -133,6 +138,7 @@ private struct RoomRowView: View {
 
 private struct ThreadView: View {
     @ObservedObject var viewModel: FunViewModel
+    private let threadEnd = "thread-end"
 
     var body: some View {
         VStack(spacing: 0) {
@@ -142,14 +148,31 @@ private struct ThreadView: View {
                         ForEach(viewModel.snapshot.items, id: \.id) { item in
                             ChatItemView(item: item).id(item.id)
                         }
+                        Color.clear.frame(height: 1).id(threadEnd)
                     }
                     .padding(16)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .onChange(of: viewModel.snapshot.items.last?.id) { _, id in
-                    if let id { proxy.scrollTo(id, anchor: .bottom) }
+                .scrollContentBackground(.hidden)
+                .safeAreaInset(edge: .bottom, spacing: 0) { docks }
+                .onAppear { scrollToEnd(proxy) }
+                .onChange(of: viewModel.snapshot.items.last?.id) { _, _ in scrollToEnd(proxy) }
+                .onChange(of: viewModel.snapshot.items.count) { _, _ in scrollToEnd(proxy) }
+                .onChange(of: viewModel.snapshot.thinking) { _, _ in scrollToEnd(proxy) }
+                .onChange(of: viewModel.snapshot.steer) { _, _ in scrollToEnd(proxy) }
+                .onChange(of: viewModel.snapshot.queue.count) { _, _ in scrollToEnd(proxy) }
+                .onChange(of: viewModel.snapshot.rooms.first { $0.selected }?.workspace) { _, _ in
+                    scrollToEnd(proxy)
                 }
             }
+            Composer(viewModel: viewModel)
+        }
+        .background(Color(nsColor: .textBackgroundColor))
+    }
+
+    @ViewBuilder
+    private var docks: some View {
+        VStack(spacing: 0) {
             if !viewModel.snapshot.thinking.isEmpty {
                 Dock(title: "Thinking") {
                     Text(viewModel.snapshot.thinking)
@@ -180,9 +203,13 @@ private struct ThreadView: View {
                     }
                 }
             }
-            Composer(viewModel: viewModel)
         }
-        .background(Color(nsColor: .textBackgroundColor))
+    }
+
+    private func scrollToEnd(_ proxy: ScrollViewProxy) {
+        DispatchQueue.main.async {
+            proxy.scrollTo(threadEnd, anchor: .bottom)
+        }
     }
 }
 
@@ -214,6 +241,10 @@ private struct QueueRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            Text("\(item.index + 1).")
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 18, alignment: .trailing)
             Text(oneLine(item.text))
                 .lineLimit(1)
                 .help(item.text)
@@ -288,6 +319,7 @@ private struct ChatItemView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Text(item.body)
+                    .foregroundStyle(.primary)
                     .textSelection(.enabled)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -303,6 +335,7 @@ private struct ChatItemView: View {
                         Text(markdown(item.body))
                     }
                 }
+                .foregroundStyle(.primary)
                 .textSelection(.enabled)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -370,17 +403,21 @@ extension LoginInfo: Identifiable {
 
 @ViewBuilder
 private func statusMark(working: Bool, error: Bool, done: Bool) -> some View {
-    if working {
-        ProgressView().controlSize(.small)
-    } else if done {
-        Image(systemName: "checkmark")
-            .foregroundStyle(.secondary)
-    } else if error {
-        Image(systemName: "exclamationmark.triangle.fill")
-            .foregroundStyle(.red)
-    } else {
-        Color.clear
+    ZStack {
+        if working {
+            ProgressView()
+                .controlSize(.mini)
+        } else if done {
+            Image(systemName: "checkmark")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+        } else if error {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.red)
+        }
     }
+    .frame(width: 16, height: 16)
 }
 
 private func oneLine(_ s: String) -> String {
