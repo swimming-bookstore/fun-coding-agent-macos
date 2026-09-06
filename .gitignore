@@ -3,7 +3,7 @@ DerivedData/
 *.xcuserstate
 .DS_Store
 
-/macos/Fun/Generated/*.a
+/macos/Fun/Generated/
 /.gui-core/
 /.demo-derived/
 /demo/record.log
