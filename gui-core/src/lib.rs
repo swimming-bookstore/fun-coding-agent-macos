@@ -688,7 +688,8 @@ fn add_folder(inner: &mut Inner, workspace: PathBuf) {
     };
     remember_opened(inner, &workspace);
     refresh_rooms(inner);
-    open_room(inner, &workspace);
+    inner.workspace = workspace;
+    new_chat(inner);
 }
 
 fn remove_folder(inner: &mut Inner, workspace: &Path) {

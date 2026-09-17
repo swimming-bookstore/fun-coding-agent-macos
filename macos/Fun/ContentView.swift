@@ -152,7 +152,9 @@ private struct ThreadView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .scrollContentBackground(.hidden)
-                .safeAreaInset(edge: .bottom, spacing: 0) { docks }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if hasDocks { docks }
+                }
                 .onAppear { scrollToEnd(proxy) }
                 .onChange(of: viewModel.snapshot.items.last?.id) { _, _ in scrollToEnd(proxy) }
                 .onChange(of: viewModel.snapshot.items.count) { _, _ in scrollToEnd(proxy) }
@@ -166,6 +168,13 @@ private struct ThreadView: View {
             Composer(viewModel: viewModel)
         }
         .background(Color(nsColor: .textBackgroundColor))
+    }
+
+    private var hasDocks: Bool {
+        !viewModel.snapshot.thinking.isEmpty
+            || !viewModel.snapshot.steer.isEmpty
+            || (!viewModel.snapshot.loggedIn && !viewModel.snapshot.empty)
+            || !viewModel.snapshot.queue.isEmpty
     }
 
     @ViewBuilder
