@@ -192,6 +192,19 @@ private struct ThreadView: View {
                     }
                 }
             }
+            if !viewModel.snapshot.loggedIn && !viewModel.snapshot.empty {
+                Dock(title: "Grok") {
+                    HStack {
+                        Text("Log in to Grok to keep chatting.")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Log In to Grok") { viewModel.loginGrok() }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .disabled(viewModel.snapshot.login != nil)
+                    }
+                }
+            }
             if !viewModel.snapshot.queue.isEmpty {
                 Dock(title: "Queue") {
                     VStack(alignment: .leading, spacing: 6) {
