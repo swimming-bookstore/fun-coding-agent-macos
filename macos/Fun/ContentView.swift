@@ -14,15 +14,6 @@ struct ContentView: View {
                 .navigationSubtitle(viewModel.snapshot.empty ? "" : viewModel.snapshot.usage)
         }
         .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button(role: .destructive) {
-                    viewModel.removeFolder()
-                } label: {
-                    Label("Remove Folder", systemImage: "folder.badge.minus")
-                }
-                .help("Remove Folder")
-                .disabled(viewModel.snapshot.empty)
-            }
             if viewModel.snapshot.working {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Cancel", role: .destructive) { viewModel.abort() }
@@ -82,11 +73,14 @@ private struct Sidebar: View {
                     .contextMenu {
                         Button("New Chat") { viewModel.newChat() }
                         Divider()
-                        Button("Remove Folder", role: .destructive) { viewModel.removeFolder() }
+                        Button("Remove Folder", role: .destructive) {
+                            viewModel.removeFolder(room.workspace)
+                        }
                     }
             }
         }
         .listStyle(.sidebar)
+        .onDeleteCommand(perform: deleteSelected)
         .searchable(text: $viewModel.search, placement: .sidebar, prompt: "Search")
         .navigationTitle("Fun")
         .toolbar {
@@ -106,6 +100,11 @@ private struct Sidebar: View {
             get: { viewModel.snapshot.rooms.first { $0.selected }?.workspace },
             set: { if let path = $0 { viewModel.openRoom(path) } }
         )
+    }
+
+    private func deleteSelected() {
+        guard let path = selection.wrappedValue else { return }
+        viewModel.removeFolder(path)
     }
 }
 
