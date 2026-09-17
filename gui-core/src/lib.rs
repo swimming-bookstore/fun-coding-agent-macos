@@ -194,6 +194,8 @@ struct Inner {
     toast: String,
     tick: u32,
     dirty: bool,
+    /// True after a refresh/login failure while auth.json is still on disk.
+    auth_stale: bool,
 }
 
 #[derive(uniffi::Object)]
@@ -330,6 +332,7 @@ fn run(tx: Sender<Msg>, rx: Receiver<Msg>) {
         toast: String::new(),
         tick: 0,
         dirty: true,
+        auth_stale: false,
     };
     if let Some(session) = session {
         ensure_run(&mut inner, workspace.clone(), session.path.clone());
@@ -473,6 +476,7 @@ fn apply_login(inner: &mut Inner, ev: LoginEv) {
         }
         LoginEv::Done => {
             inner.login = None;
+            inner.auth_stale = false;
             inner.toast = "Logged in.".into();
         }
         LoginEv::Denied => {
@@ -575,7 +579,7 @@ fn snapshot(inner: &Inner) -> Snapshot {
         usage: usage_text(tokens),
         usage_tip: usage_tip(tokens),
         working,
-        logged_in: provider_grok::has_tokens(),
+        logged_in: provider_grok::has_tokens() && !inner.auth_stale,
         empty,
         empty_note: if empty {
             "Open a folder to start a chat.".into()
@@ -1088,6 +1092,7 @@ fn drain(inner: &mut Inner) {
     let mut bumped = Vec::new();
     let mut previews = Vec::new();
     let mut got = false;
+    let mut auth_stale = false;
     for (path, run) in inner.runs.iter_mut() {
         if let Some(at) = run.think_hide_at
             && now >= at
@@ -1101,6 +1106,11 @@ fn drain(inner: &mut Inner) {
             got = true;
             if log_is_error(&line) {
                 run.error = true;
+                if let LogLine::Dim(t) = &line {
+                    if auth_session_lost(t) {
+                        auth_stale = true;
+                    }
+                }
             }
             match &line {
                 LogLine::Think(t) => {
@@ -1190,6 +1200,10 @@ fn drain(inner: &mut Inner) {
             got = true;
         }
     }
+    if auth_stale {
+        inner.auth_stale = true;
+        got = true;
+    }
     if got {
         inner.dirty = true;
     }
@@ -1278,6 +1292,14 @@ fn run_owns(workspace: &Path, inner: &Inner) -> bool {
 
 fn log_is_error(line: &LogLine) -> bool {
     matches!(line, LogLine::Dim(_))
+}
+
+fn auth_session_lost(text: &str) -> bool {
+    let t = text.to_ascii_lowercase();
+    t.contains("refresh xai token")
+        || t.contains("not logged in")
+        || t.contains("invalid_grant")
+        || t.contains("invalid refresh")
 }
 
 fn add_unread(inner: &mut Inner, workspace: &Path) {
