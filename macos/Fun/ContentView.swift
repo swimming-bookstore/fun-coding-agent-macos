@@ -114,7 +114,6 @@ private struct RoomRowView: View {
     var body: some View {
         HStack(spacing: 10) {
             statusMark(working: room.working, error: room.error, done: room.done)
-                .frame(width: 16, height: 16)
             VStack(alignment: .leading, spacing: 2) {
                 Text(room.title).lineLimit(1)
                 Text(room.preview)
@@ -428,6 +427,10 @@ private func statusMark(working: Bool, error: Bool, done: Bool) -> some View {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(.red)
+        } else {
+            Image(systemName: "bubble.left")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.tertiary)
         }
     }
     .frame(width: 16, height: 16)
