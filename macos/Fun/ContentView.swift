@@ -340,11 +340,25 @@ private struct ChatItemView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         case .note:
-            Text(item.body)
+            if item.toolDetail.isEmpty {
+                Text(item.body)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+            } else {
+                DisclosureGroup(item.body) {
+                    Text(item.toolDetail)
+                        .font(.callout.monospaced())
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 4)
+                        .textSelection(.enabled)
+                }
                 .font(.callout)
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         case .tool:
             DisclosureGroup(item.toolSummary) {
                 Text(item.toolDetail)
