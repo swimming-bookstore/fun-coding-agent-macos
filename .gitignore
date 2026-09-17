@@ -4,6 +4,7 @@ DerivedData/
 .DS_Store
 
 /macos/Fun/Generated/
+/gui-core/target/
 /.gui-core/
 /.demo-derived/
 /demo/record.log

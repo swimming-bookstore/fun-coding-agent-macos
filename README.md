@@ -1,8 +1,9 @@
 # Fun coding agent macOS
 
-Native Mac window for Fun coding agent. Shares `fun-core` with the CLI and GTK 4 app, and [fun-coding-agent-gui-core](https://github.com/swimming-bookstore/fun-coding-agent-gui-core) with the iOS app. Layout follows [connect-client-macos](https://github.com/swimming-bookstore/connect-client-macos): agent, tools, and sessions in Rust, SwiftUI only for the window.
+Native Mac window for Fun coding agent. Shares `fun-core` with the CLI and GTK 4 app. Layout follows [connect-client-macos](https://github.com/swimming-bookstore/connect-client-macos): agent, tools, and sessions in Rust, SwiftUI only for the window.
 
 ```
+gui-core/      UniFFI crate (agent, tools, sessions, Grok login)
 macos/         SwiftUI app + Generated bindings
 ```
 
@@ -14,7 +15,7 @@ fun login
 open macos/Fun.xcodeproj
 ```
 
-Run the `Fun` scheme (macOS 14+, Xcode, `rustup` with Mac targets). Xcode builds the shared Rust core first (`scripts/build-core.sh`) into `macos/Fun/Generated/`. Same script works from a terminal.
+Run the `Fun` scheme (macOS 14+, Xcode, `rustup` with Mac targets). Xcode builds `gui-core` first (`scripts/build-core.sh`) into `macos/Fun/Generated/`. Same script works from a terminal.
 
 Uses the same config, auth, and sessions as `fun`:
 
@@ -22,7 +23,7 @@ Uses the same config, auth, and sessions as `fun`:
 - Auth: `~/.local/share/fun/auth.json`
 - Sessions: `~/.local/share/fun/sessions/`
 
-Depends on `fun-core` and `provider-grok` from https://github.com/swimming-bookstore/fun-coding-agent, and on https://github.com/swimming-bookstore/fun-coding-agent-gui-core (not a local checkout).
+Depends on `fun-core` and `provider-grok` from https://github.com/swimming-bookstore/fun-coding-agent.
 
 Not sandboxed — the agent reads and writes the folders you open, same as the CLI.
 
