@@ -105,7 +105,7 @@ enum Msg {
     Abort,
     OpenRoom(String),
     AddFolder(String),
-    RemoveFolder,
+    RemoveFolder(String),
     NewChat,
     QueueSendNow(u32),
     QueueEdit { index: u32, reply: Sender<String> },
@@ -237,8 +237,8 @@ impl FunApp {
         let _ = self.tx.send(Msg::AddFolder(workspace));
     }
 
-    pub fn remove_folder(&self) {
-        let _ = self.tx.send(Msg::RemoveFolder);
+    pub fn remove_folder(&self, workspace: String) {
+        let _ = self.tx.send(Msg::RemoveFolder(workspace));
     }
 
     pub fn new_chat(&self) {
@@ -381,9 +381,8 @@ fn handle(core: &mut Core, msg: Msg) {
         Msg::Abort => abort_current(&mut core.inner),
         Msg::OpenRoom(workspace) => open_room(&mut core.inner, Path::new(&workspace)),
         Msg::AddFolder(workspace) => add_folder(&mut core.inner, PathBuf::from(workspace)),
-        Msg::RemoveFolder => {
-            let ws = core.inner.workspace.clone();
-            remove_folder(&mut core.inner, &ws);
+        Msg::RemoveFolder(workspace) => {
+            remove_folder(&mut core.inner, Path::new(&workspace));
         }
         Msg::NewChat => new_chat(&mut core.inner),
         Msg::QueueSendNow(index) => queue_send_now(&mut core.inner, index as usize),

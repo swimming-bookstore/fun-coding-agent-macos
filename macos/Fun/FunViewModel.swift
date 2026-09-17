@@ -66,7 +66,7 @@ final class FunViewModel: ObservableObject {
     func abort() { app?.abort() }
     func openRoom(_ workspace: String) { app?.openRoom(workspace: workspace) }
     func newChat() { app?.newChat() }
-    func removeFolder() { app?.removeFolder() }
+    func removeFolder(_ workspace: String) { app?.removeFolder(workspace: workspace) }
     func loginGrok() { app?.loginGrok() }
     func logoutGrok() { app?.logoutGrok() }
     func dismissLogin() { app?.dismissLogin() }
