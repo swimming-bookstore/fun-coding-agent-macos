@@ -27,7 +27,9 @@ enum DemoDriver {
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        concealPointer(awayFrom: window)
         try? await Task.sleep(nanoseconds: 1_000_000_000)
+        concealPointer(awayFrom: window)
 
         let folder = ProcessInfo.processInfo.environment["FUN_DEMO_FOLDER"] ?? NSHomeDirectory() + "/demo"
         if viewModel.snapshot.empty {
@@ -71,6 +73,17 @@ enum DemoDriver {
         }
         try? await Task.sleep(nanoseconds: 3_500_000_000)
         NSApp.terminate(nil)
+    }
+
+    private static func concealPointer(awayFrom window: NSWindow) {
+        NSCursor.hide()
+        NSCursor.setHiddenUntilMouseMoves(true)
+        CGDisplayHideCursor(CGMainDisplayID())
+        let f = window.frame
+        let cocoa = NSPoint(x: f.minX - 120, y: f.maxY + 80)
+        let primary = NSScreen.screens.first { $0.frame.origin == .zero } ?? NSScreen.main
+        let top = primary.map { NSMaxY($0.frame) } ?? cocoa.y
+        CGWarpMouseCursorPosition(CGPoint(x: max(2, cocoa.x), y: max(2, top - cocoa.y)))
     }
 
     private static func type(_ viewModel: FunViewModel, _ text: String, cps: Int) async {
