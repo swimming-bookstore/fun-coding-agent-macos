@@ -213,6 +213,11 @@ def main() -> None:
         if not wid:
             die("Fun window not found")
         print(f"recording window {wid} pid={fun.pid}", file=sys.stderr)
+        # Keep the pointer off the Fun window (screencapture draws it).
+        subprocess.run(
+            ["swift", "-e", "import CoreGraphics; CGWarpMouseCursorPosition(CGPoint(x: 2, y: 2)); CGDisplayHideCursor(CGMainDisplayID())"],
+            check=False,
+        )
         terminal_screencapture(wid)
         capturing = False
         deadline = time.monotonic() + 8
@@ -224,6 +229,12 @@ def main() -> None:
         if not capturing:
             die("Terminal did not start screencapture.")
         while time.monotonic() - t0 < MAX_SEC and fun.poll() is None:
+            subprocess.run(
+                ["swift", "-e", "import CoreGraphics; CGWarpMouseCursorPosition(CGPoint(x: 2, y: 2)); CGDisplayHideCursor(CGMainDisplayID())"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
             time.sleep(0.4)
         stop_capture()
     finally:
