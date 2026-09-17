@@ -14,6 +14,9 @@ else
   CORE="$ROOT/.gui-core"
   if [ ! -d "$CORE/.git" ]; then
     git clone --depth 1 "$REPO" "$CORE"
+  else
+    git -C "$CORE" fetch --depth 1 origin master
+    git -C "$CORE" checkout -f FETCH_HEAD
   fi
 fi
 
