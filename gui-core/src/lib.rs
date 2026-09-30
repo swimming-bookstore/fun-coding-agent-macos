@@ -5,11 +5,11 @@
 uniffi::setup_scaffolding!();
 
 use fun_core::agent::{
-    Agent, LogLine, MailboxTx, ToolRun, args_repr, mailbox, prompt, title_case, tool_counts,
-    tool_summary,
+    Agent, LogLine, MailboxTx, ToolRun, UserTurn, args_repr, mailbox, prompt_user, title_case,
+    tool_counts, tool_summary,
 };
 use fun_core::grok::Grok;
-use fun_core::session::{prune_inspect_ids, Entry, Session};
+use fun_core::session::{Entry, Image, Session, image_label, prune_inspect_ids, user_display};
 use fun_core::tool::get_tools;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -60,6 +60,86 @@ pub struct QueueItem {
     pub flash: bool,
 }
 
+/// A picture sitting in the composer. `data` is raw bytes (png, jpeg, gif, or webp).
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct ImageAttachment {
+    pub name: String,
+    pub data: Vec<u8>,
+}
+
+/// Composer contents crossing into the core. Images are not yet validated.
+struct TurnIn {
+    text: String,
+    images: Vec<ImageAttachment>,
+}
+
+impl TurnIn {
+    fn from_turn(turn: UserTurn) -> Self {
+        Self {
+            text: turn.text,
+            images: turn
+                .images
+                .into_iter()
+                .map(|image| ImageAttachment {
+                    name: image.name,
+                    data: base64_decode(&image.data),
+                })
+                .collect(),
+        }
+    }
+
+    fn into_turn(self) -> (Option<UserTurn>, Vec<String>) {
+        let text = self.text.trim().to_string();
+        let mut images = Vec::new();
+        let mut skipped = Vec::new();
+        for attachment in self.images {
+            let label = if attachment.name.trim().is_empty() {
+                "image".to_string()
+            } else {
+                attachment.name.clone()
+            };
+            match image_from_bytes(&attachment.name, &attachment.data) {
+                Ok(image) => images.push(image),
+                Err(err) => skipped.push(format!("{label}: {err}")),
+            }
+        }
+        if text.is_empty() && images.is_empty() {
+            return (None, skipped);
+        }
+        (Some(UserTurn { text, images }), skipped)
+    }
+}
+
+/// A queued turn handed back to the composer for editing.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct TurnOut {
+    pub text: String,
+    pub images: Vec<ImageAttachment>,
+}
+
+impl TurnOut {
+    fn empty() -> Self {
+        Self {
+            text: String::new(),
+            images: Vec::new(),
+        }
+    }
+
+    fn from_turn(turn: &UserTurn) -> Self {
+        Self {
+            text: turn.text.clone(),
+            images: turn
+                .images
+                .iter()
+                .map(|image| ImageAttachment {
+                    name: image.name.clone(),
+                    data: base64_decode(&image.data),
+                })
+                .collect(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct LoginInfo {
     pub status: String,
@@ -94,21 +174,21 @@ pub trait FunDelegate: Send + Sync {
 }
 
 enum GuiCmd {
-    Prompt { text: String, seq: u64 },
+    Prompt { turn: UserTurn, seq: u64 },
     Shutdown,
 }
 
 enum Msg {
     Start(Arc<dyn FunDelegate>),
-    Submit(String),
-    Interrupt(String),
+    Submit(TurnIn),
+    Interrupt(TurnIn),
     Abort,
     OpenRoom(String),
     AddFolder(String),
     RemoveFolder(String),
     NewChat,
     QueueSendNow(u32),
-    QueueEdit { index: u32, reply: Sender<String> },
+    QueueEdit { index: u32, reply: Sender<TurnOut> },
     QueueMove { index: u32, delta: i32 },
     QueueDrop(u32),
     LoginGrok,
@@ -151,8 +231,8 @@ struct ChatRun {
     draft: String,
     thinking: String,
     think_hide_at: Option<Instant>,
-    queued: Vec<String>,
-    steered: Vec<String>,
+    queued: Vec<UserTurn>,
+    steered: Vec<UserTurn>,
     last_input: u64,
 }
 
@@ -219,12 +299,12 @@ impl FunApp {
         let _ = self.tx.send(Msg::Start(delegate));
     }
 
-    pub fn submit(&self, text: String) {
-        let _ = self.tx.send(Msg::Submit(text));
+    pub fn submit(&self, text: String, images: Vec<ImageAttachment>) {
+        let _ = self.tx.send(Msg::Submit(TurnIn { text, images }));
     }
 
-    pub fn interrupt(&self, text: String) {
-        let _ = self.tx.send(Msg::Interrupt(text));
+    pub fn interrupt(&self, text: String, images: Vec<ImageAttachment>) {
+        let _ = self.tx.send(Msg::Interrupt(TurnIn { text, images }));
     }
 
     pub fn abort(&self) {
@@ -251,12 +331,12 @@ impl FunApp {
         let _ = self.tx.send(Msg::QueueSendNow(index));
     }
 
-    pub fn queue_edit(&self, index: u32) -> String {
+    pub fn queue_edit(&self, index: u32) -> TurnOut {
         let (reply, rx) = mpsc::channel();
         if self.tx.send(Msg::QueueEdit { index, reply }).is_err() {
-            return String::new();
+            return TurnOut::empty();
         }
-        rx.recv().unwrap_or_default()
+        rx.recv().unwrap_or_else(|_| TurnOut::empty())
     }
 
     pub fn queue_move(&self, index: u32, delta: i32) {
@@ -379,8 +459,8 @@ fn handle(core: &mut Core, msg: Msg) {
         Msg::Start(delegate) => {
             core.delegate = Some(delegate);
         }
-        Msg::Submit(text) => submit(&mut core.inner, text),
-        Msg::Interrupt(text) => interrupt_now(&mut core.inner, text),
+        Msg::Submit(turn) => submit(&mut core.inner, turn),
+        Msg::Interrupt(turn) => interrupt_now(&mut core.inner, turn),
         Msg::Abort => abort_current(&mut core.inner),
         Msg::OpenRoom(workspace) => open_room(&mut core.inner, Path::new(&workspace)),
         Msg::AddFolder(workspace) => add_folder(&mut core.inner, PathBuf::from(workspace)),
@@ -390,8 +470,8 @@ fn handle(core: &mut Core, msg: Msg) {
         Msg::NewChat => new_chat(&mut core.inner),
         Msg::QueueSendNow(index) => queue_send_now(&mut core.inner, index as usize),
         Msg::QueueEdit { index, reply } => {
-            let text = queue_edit(&mut core.inner, index as usize);
-            let _ = reply.send(text);
+            let turn = queue_edit(&mut core.inner, index as usize);
+            let _ = reply.send(turn);
         }
         Msg::QueueMove { index, delta } => queue_move(&mut core.inner, index as usize, delta),
         Msg::QueueDrop(index) => queue_drop(&mut core.inner, index as usize),
@@ -570,9 +650,12 @@ fn snapshot(inner: &Inner) -> Snapshot {
     let (steer, steer_count) = if steered.is_empty() {
         (String::new(), String::new())
     } else if steered.len() > 1 {
-        (one_line(&steered[0]), format!("×{}", steered.len()))
+        (
+            one_line(&steered[0].display()),
+            format!("×{}", steered.len()),
+        )
     } else {
-        (one_line(&steered[0]), String::new())
+        (one_line(&steered[0].display()), String::new())
     };
     Snapshot {
         title: if empty { "Fun".into() } else { folder_name(ws) },
@@ -623,9 +706,9 @@ fn queue_items(inner: &Inner) -> Vec<QueueItem> {
     items
         .into_iter()
         .enumerate()
-        .map(|(i, text)| QueueItem {
+        .map(|(i, turn)| QueueItem {
             index: i as u32,
-            text,
+            text: turn.display(),
             flash: flash == Some(i),
         })
         .collect()
@@ -865,9 +948,27 @@ fn append_item(inner: &mut Inner, kind: Kind, streaming: bool) -> Option<u64> {
     stream_id
 }
 
-fn submit(inner: &mut Inner, raw: String) {
-    let text = raw.trim().to_string();
-    if text.is_empty() || inner.workspace.as_os_str().is_empty() {
+fn note_skipped(inner: &mut Inner, skipped: &[String]) {
+    if skipped.is_empty() {
+        return;
+    }
+    append_item(
+        inner,
+        Kind::Note {
+            body: format!("Skipped {} image(s)", skipped.len()),
+            detail: skipped.join("\n"),
+        },
+        false,
+    );
+}
+
+fn submit(inner: &mut Inner, raw: TurnIn) {
+    let (turn, skipped) = raw.into_turn();
+    note_skipped(inner, &skipped);
+    let Some(turn) = turn else {
+        return;
+    };
+    if inner.workspace.as_os_str().is_empty() {
         return;
     }
     let workspace = inner.workspace.clone();
@@ -878,8 +979,8 @@ fn submit(inner: &mut Inner, raw: String) {
             return;
         };
         if run.working {
-            run.mailbox.idle(text.clone());
-            run.queued.push(text.clone());
+            run.mailbox.idle(turn.clone());
+            run.queued.push(turn);
             true
         } else {
             run.working = true;
@@ -887,33 +988,29 @@ fn submit(inner: &mut Inner, raw: String) {
             run.done = false;
             run.seq = run.seq.wrapping_add(1);
             let seq = run.seq;
-            let _ = run.cmd.send(GuiCmd::Prompt {
-                text: text.clone(),
-                seq,
-            });
+            let _ = run.cmd.send(GuiCmd::Prompt { turn, seq });
             false
         }
     };
     if working {
         return;
     }
-    show_user(inner, text);
 }
 
-fn interrupt_now(inner: &mut Inner, raw: String) {
-    let text = raw.trim().to_string();
-    if text.is_empty() {
+fn interrupt_now(inner: &mut Inner, raw: TurnIn) {
+    let (turn, skipped) = raw.into_turn();
+    note_skipped(inner, &skipped);
+    let Some(turn) = turn else {
         return;
-    }
+    };
     let workspace = inner.workspace.clone();
     if !is_working(inner, &workspace) {
-        submit(inner, text);
+        submit(inner, TurnIn::from_turn(turn));
         return;
     }
     if let Some(run) = run_get(&inner.runs, &workspace) {
-        run.mailbox.interrupt(text.clone());
+        run.mailbox.interrupt(turn);
     }
-    show_user(inner, text);
 }
 
 fn abort_current(inner: &mut Inner) {
@@ -930,31 +1027,26 @@ fn abort_current(inner: &mut Inner) {
     }
 }
 
-fn show_user(inner: &mut Inner, text: String) {
-    append_item(inner, Kind::User(text.clone()), false);
-    let ws = inner.workspace.clone();
-    update_preview(inner, &ws, &format_preview("You", &text));
-}
-
 fn queue_send_now(inner: &mut Inner, i: usize) {
     let workspace = inner.workspace.clone();
     if let Some(run) = run_mut(&mut inner.runs, &workspace) {
         if i < run.queued.len() {
-            let text = run.queued.remove(i);
+            let turn = run.queued.remove(i);
             run.mailbox.set_idle(run.queued.clone());
-            run.mailbox.steer(text.clone());
-            run.steered.push(text);
+            run.mailbox.steer(turn.clone());
+            run.steered.push(turn);
         }
     }
 }
 
-fn queue_edit(inner: &mut Inner, i: usize) -> String {
+fn queue_edit(inner: &mut Inner, i: usize) -> TurnOut {
     let workspace = inner.workspace.clone();
-    let mut pulled = String::new();
+    let mut pulled = TurnOut::empty();
     if let Some(run) = run_mut(&mut inner.runs, &workspace) {
         if i < run.queued.len() {
-            pulled = run.queued.remove(i);
+            let turn = run.queued.remove(i);
             run.mailbox.set_idle(run.queued.clone());
+            pulled = TurnOut::from_turn(&turn);
         }
     }
     pulled
@@ -1141,13 +1233,16 @@ fn drain(inner: &mut Inner) {
                     }
                 }
                 LogLine::User(t) => {
-                    if let Some(i) = run.queued.iter().position(|q| q == t) {
+                    if let Some(i) = run.queued.iter().position(|q| q.display() == *t) {
                         run.queued.remove(i);
                     }
-                    if let Some(i) = run.steered.iter().position(|s| s == t) {
+                    if let Some(i) = run.steered.iter().position(|s| s.display() == *t) {
                         run.steered.remove(i);
                     }
                     clear_think(run);
+                    if same_dir(path, &current) {
+                        previews.push((path.clone(), format_preview("You", t)));
+                    }
                 }
                 LogLine::Tools { .. } => {
                     dismiss_think(run);
@@ -1374,8 +1469,8 @@ fn ensure_run(inner: &mut Inner, workspace: PathBuf, session_path: PathBuf) {
         while let Ok(cmd) = cmd_rx.recv() {
             match cmd {
                 GuiCmd::Shutdown => break,
-                GuiCmd::Prompt { text, seq } => {
-                    if let Err(e) = rt.block_on(prompt(&mut agent, text)) {
+                GuiCmd::Prompt { turn, seq } => {
+                    if let Err(e) = rt.block_on(prompt_user(&mut agent, turn)) {
                         let _ = err_tx.send(LogLine::Dim(format!("{e:#}")));
                     }
                     let _ = done_tx.send(seq);
@@ -1467,8 +1562,8 @@ fn replay(session: &Session) -> Vec<Kind> {
     let mut notes = session.prune_notes.iter().peekable();
     while i < entries.len() {
         match &entries[i] {
-            Entry::User { text } => {
-                out.push(Kind::User(text.clone()));
+            Entry::User { text, images } => {
+                out.push(Kind::User(user_display(text, images)));
                 i += 1;
             }
             Entry::Assistant { text, calls, .. } => {
@@ -1676,8 +1771,8 @@ fn format_preview(who: &str, body: &str) -> String {
 fn session_preview(session: &Session) -> String {
     for e in session.entries.iter().rev() {
         match e {
-            Entry::User { text } if !text.trim().is_empty() => {
-                return format_preview("You", text);
+            Entry::User { text, images } if !text.trim().is_empty() || !images.is_empty() => {
+                return format_preview("You", &user_display(text, images));
             }
             Entry::Assistant { text, .. } if !text.trim().is_empty() => {
                 return format_preview("Fun", text);
@@ -1702,6 +1797,112 @@ fn usage_text(tokens: u64) -> String {
 
 fn usage_tip(tokens: u64) -> String {
     format!("{tokens} / {CONTEXT_MAX} last prompt tokens")
+}
+
+fn image_from_bytes(name: &str, bytes: &[u8]) -> Result<Image, String> {
+    if bytes.is_empty() {
+        return Err("empty image".into());
+    }
+    if bytes.len() > fun_core::session::MAX_IMAGE_BYTES {
+        return Err(format!(
+            "image is {} bytes (max {})",
+            bytes.len(),
+            fun_core::session::MAX_IMAGE_BYTES
+        ));
+    }
+    let media =
+        sniff_image(bytes).ok_or_else(|| "not a png, jpeg, gif, or webp image".to_string())?;
+    let label = if name.trim().is_empty() {
+        image_label(&format!("image.{media}"))
+    } else {
+        image_label(name)
+    };
+    Ok(Image {
+        media: media.into(),
+        data: base64_encode(bytes),
+        name: label.strip_prefix("image ").unwrap_or("image").to_string(),
+    })
+}
+
+fn sniff_image(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]) {
+        return Some("png");
+    }
+    if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return Some("jpeg");
+    }
+    if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        return Some("gif");
+    }
+    if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        return Some("webp");
+    }
+    None
+}
+
+fn base64_encode(bytes: &[u8]) -> String {
+    const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    let mut i = 0;
+    while i + 3 <= bytes.len() {
+        let n =
+            (u32::from(bytes[i]) << 16) | (u32::from(bytes[i + 1]) << 8) | u32::from(bytes[i + 2]);
+        out.push(T[((n >> 18) & 63) as usize] as char);
+        out.push(T[((n >> 12) & 63) as usize] as char);
+        out.push(T[((n >> 6) & 63) as usize] as char);
+        out.push(T[(n & 63) as usize] as char);
+        i += 3;
+    }
+    match bytes.len() - i {
+        1 => {
+            let n = u32::from(bytes[i]) << 16;
+            out.push(T[((n >> 18) & 63) as usize] as char);
+            out.push(T[((n >> 12) & 63) as usize] as char);
+            out.push('=');
+            out.push('=');
+        }
+        2 => {
+            let n = (u32::from(bytes[i]) << 16) | (u32::from(bytes[i + 1]) << 8);
+            out.push(T[((n >> 18) & 63) as usize] as char);
+            out.push(T[((n >> 12) & 63) as usize] as char);
+            out.push(T[((n >> 6) & 63) as usize] as char);
+            out.push('=');
+        }
+        _ => {}
+    }
+    out
+}
+
+fn base64_decode(s: &str) -> Vec<u8> {
+    fn val(c: u8) -> Option<u8> {
+        match c {
+            b'A'..=b'Z' => Some(c - b'A'),
+            b'a'..=b'z' => Some(c - b'a' + 26),
+            b'0'..=b'9' => Some(c - b'0' + 52),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        }
+    }
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len() / 4 * 3);
+    let mut i = 0;
+    while i + 4 <= bytes.len() {
+        let (Some(a), Some(b)) = (val(bytes[i]), val(bytes[i + 1])) else {
+            break;
+        };
+        out.push((a << 2) | (b >> 4));
+        if bytes[i + 2] != b'=' {
+            let Some(c) = val(bytes[i + 2]) else { break };
+            out.push((b << 4) | (c >> 2));
+            if bytes[i + 3] != b'=' {
+                let Some(d) = val(bytes[i + 3]) else { break };
+                out.push((c << 6) | d);
+            }
+        }
+        i += 4;
+    }
+    out
 }
 
 fn opened_path() -> PathBuf {

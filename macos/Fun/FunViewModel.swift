@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import UniformTypeIdentifiers
 
 @MainActor
 final class FunViewModel: ObservableObject {
@@ -21,6 +22,7 @@ final class FunViewModel: ObservableObject {
         toast: ""
     )
     @Published var draft: String = ""
+    @Published var images: [ImageAttachment] = []
     @Published var search: String = ""
 
     private var app: FunApp?
@@ -53,14 +55,18 @@ final class FunViewModel: ObservableObject {
 
     func submit() {
         let text = draft
+        let attached = images
         draft = ""
-        app?.submit(text: text)
+        images = []
+        app?.submit(text: text, images: attached)
     }
 
     func interrupt() {
         let text = draft
+        let attached = images
         draft = ""
-        app?.interrupt(text: text)
+        images = []
+        app?.interrupt(text: text, images: attached)
     }
 
     func abort() { app?.abort() }
@@ -76,12 +82,64 @@ final class FunViewModel: ObservableObject {
     func queueDrop(_ i: UInt32) { app?.queueDrop(index: i) }
     func queueMove(_ i: UInt32, delta: Int32) { app?.queueMove(index: i, delta: delta) }
     func queueEdit(_ i: UInt32) {
-        guard let text = app?.queueEdit(index: i), !text.isEmpty else { return }
+        guard let turn = app?.queueEdit(index: i) else { return }
+        let text = turn.text
+        let attached = turn.images
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attached.isEmpty {
+            return
+        }
         if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             draft = text
-        } else {
+        } else if !text.isEmpty {
             draft = "\(draft.trimmingCharacters(in: .whitespacesAndNewlines))\n\(text)"
         }
+        images.append(contentsOf: attached)
+    }
+
+    func attachImages() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.title = "Attach images"
+        panel.allowedContentTypes = [.png, .jpeg, .gif, .webP]
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls {
+            attachFile(url)
+        }
+    }
+
+    func attachFile(_ url: URL) {
+        guard let data = try? Data(contentsOf: url), !data.isEmpty else { return }
+        images.append(ImageAttachment(name: url.lastPathComponent, data: data))
+    }
+
+    func dropImage(_ index: Int) {
+        guard images.indices.contains(index) else { return }
+        images.remove(at: index)
+    }
+
+    func takeDrop(_ providers: [NSItemProvider]) -> Bool {
+        var took = false
+        for provider in providers {
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                took = true
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { item, _ in
+                    let url = (item as? URL) ?? (item as? Data).flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
+                    guard let url else { return }
+                    Task { @MainActor in self.attachFile(url) }
+                }
+            } else if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+                took = true
+                provider.loadDataRepresentation(for: .image) { data, _ in
+                    guard let data, !data.isEmpty else { return }
+                    Task { @MainActor in
+                        self.images.append(ImageAttachment(name: "image", data: data))
+                    }
+                }
+            }
+        }
+        return took
     }
 
     func pickFolder() {

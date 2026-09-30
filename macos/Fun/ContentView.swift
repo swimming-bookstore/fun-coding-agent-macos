@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @ObservedObject var viewModel: FunViewModel
@@ -290,41 +291,90 @@ private struct Composer: View {
 
     private var canSend: Bool {
         !viewModel.snapshot.empty
-            && !viewModel.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (!viewModel.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !viewModel.images.isEmpty)
     }
 
     var body: some View {
         VStack(spacing: 0) {
             Divider()
-            HStack(alignment: .bottom, spacing: 8) {
-                TextField("Message", text: $viewModel.draft, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(1...6)
-                    .focused($focused)
-                    .onKeyPress { press in
-                        if press.key == .escape {
-                            viewModel.abort()
-                            return .handled
+            VStack(alignment: .leading, spacing: 8) {
+                if !viewModel.images.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(Array(viewModel.images.enumerated()), id: \.offset) { index, image in
+                                ImageChip(name: image.name) {
+                                    viewModel.dropImage(index)
+                                }
+                            }
                         }
-                        guard press.key == .return else { return .ignored }
-                        if press.modifiers.contains(.option) { return .ignored }
-                        if press.modifiers.contains(.control) {
-                            viewModel.interrupt()
-                            return .handled
-                        }
-                        viewModel.submit()
-                        return .handled
                     }
-                Button("Send") { viewModel.submit() }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(!canSend)
-                    .help("Return to send  ·  Control-Return interrupt  ·  Option-Return newline")
+                }
+                HStack(alignment: .bottom, spacing: 8) {
+                    TextField("Message", text: $viewModel.draft, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(1...6)
+                        .focused($focused)
+                        .onKeyPress { press in
+                            if press.key == .escape {
+                                viewModel.abort()
+                                return .handled
+                            }
+                            guard press.key == .return else { return .ignored }
+                            if press.modifiers.contains(.option) { return .ignored }
+                            if press.modifiers.contains(.control) {
+                                viewModel.interrupt()
+                                return .handled
+                            }
+                            viewModel.submit()
+                            return .handled
+                        }
+                    Button {
+                        viewModel.attachImages()
+                    } label: {
+                        Image(systemName: "photo")
+                    }
+                    .help("Attach a png, jpeg, gif, or webp (4 MB max). Drop a file here too.")
+                    .disabled(viewModel.snapshot.empty)
+                    Button("Send") { viewModel.submit() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .disabled(!canSend)
+                        .help("Return to send  ·  Control-Return interrupt  ·  Option-Return newline")
+                }
             }
             .padding(12)
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { focused = true }
+        .onDrop(of: [.fileURL, .image], isTargeted: nil) { providers in
+            viewModel.takeDrop(providers)
+        }
+    }
+}
+
+private struct ImageChip: View {
+    let name: String
+    let onDrop: () -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "photo")
+                .font(.caption)
+            Text(name.isEmpty ? "image" : name)
+                .lineLimit(1)
+            Button(action: onDrop) {
+                Image(systemName: "xmark")
+                    .font(.caption2.weight(.bold))
+            }
+            .buttonStyle(.plain)
+            .help("Remove image")
+        }
+        .font(.caption)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.accentColor.opacity(0.12))
+        .clipShape(Capsule())
     }
 }
 

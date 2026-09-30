@@ -286,7 +286,7 @@ dependencies = [
 [[package]]
 name = "fun-core"
 version = "0.1.0"
-source = "git+https://github.com/swimming-bookstore/fun-coding-agent#9af103a3f76be42e0e4b1494fcaf1e86466a36bf"
+source = "git+https://github.com/swimming-bookstore/fun-coding-agent?rev=d05577931ac3f646b778cc1d5382a6685403cd0f#d05577931ac3f646b778cc1d5382a6685403cd0f"
 dependencies = [
  "anyhow",
  "libc",
@@ -770,7 +770,7 @@ dependencies = [
 [[package]]
 name = "provider-grok"
 version = "0.1.0"
-source = "git+https://github.com/swimming-bookstore/fun-coding-agent#9af103a3f76be42e0e4b1494fcaf1e86466a36bf"
+source = "git+https://github.com/swimming-bookstore/fun-coding-agent?rev=d05577931ac3f646b778cc1d5382a6685403cd0f#d05577931ac3f646b778cc1d5382a6685403cd0f"
 dependencies = [
  "anyhow",
  "libc",
