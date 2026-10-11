@@ -45,6 +45,12 @@ final class FunViewModel: ObservableObject {
         self.app = app
         self.bridge = bridge
         app.start(delegate: bridge)
+        if let model = UserDefaults.standard.string(forKey: "fun.model") {
+            let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                app.setModel(model: trimmed)
+            }
+        }
     }
 
     func stop() {
@@ -77,6 +83,7 @@ final class FunViewModel: ObservableObject {
     func logoutGrok() { app?.logoutGrok() }
     func dismissLogin() { app?.dismissLogin() }
     func dismissToast() { app?.dismissToast() }
+    func setModel(_ model: String) { app?.setModel(model: model) }
 
     func queueSendNow(_ i: UInt32) { app?.queueSendNow(index: i) }
     func queueDrop(_ i: UInt32) { app?.queueDrop(index: i) }

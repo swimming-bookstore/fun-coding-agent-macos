@@ -39,6 +39,9 @@ pub struct ChatItem {
     pub streaming: bool,
     pub tool_summary: String,
     pub tool_detail: String,
+    /// Pictures a Read tool pointed at. Empty for every other row.
+    /// Bytes stay on disk; the UI loads them when the row is on screen.
+    pub images: Vec<ChatImage>,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -60,6 +63,12 @@ pub struct QueueItem {
     pub flash: bool,
 }
 
+/// A picture the chat can show. `path` is absolute; the file is not read until displayed.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct ChatImage {
+    pub name: String,
+    pub path: String,
+}
 /// A picture sitting in the composer. `data` is raw bytes (png, jpeg, gif, or webp).
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct ImageAttachment {
@@ -89,7 +98,7 @@ impl TurnIn {
     }
 
     fn into_turn(self) -> (Option<UserTurn>, Vec<String>) {
-        let text = self.text.trim().to_string();
+        let mut text = self.text.trim().to_string();
         let mut images = Vec::new();
         let mut skipped = Vec::new();
         for attachment in self.images {
@@ -105,6 +114,10 @@ impl TurnIn {
         }
         if text.is_empty() && images.is_empty() {
             return (None, skipped);
+        }
+        // Match session user_display so an image-only send is visible immediately.
+        if text.is_empty() {
+            text = user_display("", &images);
         }
         (Some(UserTurn { text, images }), skipped)
     }
@@ -196,6 +209,7 @@ enum Msg {
     Toast(String),
     DismissLogin,
     DismissToast,
+    SetModel(String),
     Shutdown,
     Login(LoginEv),
 }
@@ -233,6 +247,8 @@ struct ChatRun {
     think_hide_at: Option<Instant>,
     queued: Vec<UserTurn>,
     steered: Vec<UserTurn>,
+    /// User lines logged while this room was not on screen.
+    pending_user: Vec<String>,
     last_input: u64,
 }
 
@@ -361,6 +377,10 @@ impl FunApp {
 
     pub fn dismiss_toast(&self) {
         let _ = self.tx.send(Msg::DismissToast);
+    }
+
+    pub fn set_model(&self, model: String) {
+        let _ = self.tx.send(Msg::SetModel(model));
     }
 
     pub fn shutdown(&self) {
@@ -492,6 +512,7 @@ fn handle(core: &mut Core, msg: Msg) {
         Msg::Toast(msg) => core.inner.toast = msg,
         Msg::DismissLogin => core.inner.login = None,
         Msg::DismissToast => core.inner.toast.clear(),
+        Msg::SetModel(model) => set_model(&mut core.inner, &model),
         Msg::Shutdown => {}
         Msg::Login(ev) => apply_login(&mut core.inner, ev),
     }
@@ -636,10 +657,24 @@ fn login_thread(tx: Sender<Msg>) {
     });
 }
 
+fn set_model(inner: &mut Inner, raw: &str) {
+    let model = raw.trim();
+    if model.is_empty() || model == inner.model {
+        return;
+    }
+    inner.model = model.to_string();
+    // The worker copies the model at spawn. Drop it so the next send starts
+    // one with the new name. The session file is unchanged.
+    stop_run(inner, &inner.workspace.clone());
+    inner.dirty = true;
+    inner.toast = format!("Model set to {model}. Next message uses it.");
+}
+
 fn snapshot(inner: &Inner) -> Snapshot {
     let empty = inner.workspace.as_os_str().is_empty();
     let ws = &inner.workspace;
     let working = is_working(inner, ws);
+    let busy = is_busy(inner, ws);
     let tokens = run_get(&inner.runs, ws).map(|r| r.last_input).unwrap_or(0);
     let thinking = run_get(&inner.runs, ws)
         .map(|r| think_preview(&r.thinking))
@@ -661,7 +696,7 @@ fn snapshot(inner: &Inner) -> Snapshot {
         title: if empty { "Fun".into() } else { folder_name(ws) },
         usage: usage_text(tokens),
         usage_tip: usage_tip(tokens),
-        working,
+        working: busy,
         logged_in: provider_grok::has_tokens() && !inner.auth_stale,
         empty,
         empty_note: if empty {
@@ -680,7 +715,7 @@ fn snapshot(inner: &Inner) -> Snapshot {
                 title: r.title.clone(),
                 preview: r.preview.clone(),
                 unread: unread_for(inner, &r.workspace),
-                working: is_working(inner, &r.workspace),
+                working: is_busy(inner, &r.workspace),
                 error: is_error(inner, &r.workspace),
                 done: is_done(inner, &r.workspace),
                 selected: same_dir(&r.workspace, ws),
@@ -820,9 +855,15 @@ fn new_chat(inner: &mut Inner) {
 }
 
 fn resume_stream(inner: &mut Inner, workspace: &Path) {
-    let draft = run_get(&inner.runs, workspace)
-        .map(|r| r.draft.clone())
+    let (draft, pending) = run_mut(&mut inner.runs, workspace)
+        .map(|r| {
+            let pending = std::mem::take(&mut r.pending_user);
+            (r.draft.clone(), pending)
+        })
         .unwrap_or_default();
+    for text in pending {
+        append_item(inner, Kind::User(text), false);
+    }
     inner.stream_id = None;
     if draft.trim().is_empty() {
         return;
@@ -880,12 +921,16 @@ fn append_marker(inner: &mut Inner) {
         streaming: false,
         tool_summary: String::new(),
         tool_detail: String::new(),
+        images: Vec::new(),
     });
 }
 
 fn append_item(inner: &mut Inner, kind: Kind, streaming: bool) -> Option<u64> {
     let empty = match &kind {
-        Kind::User(s) | Kind::Agent(s) => s.trim().is_empty(),
+        // Image-only turns display as an empty string until the session label
+        // is known. Keep the bubble so the send is visible in the thread.
+        Kind::User(_) => false,
+        Kind::Agent(s) => s.trim().is_empty(),
         Kind::Note { body, .. } => body.trim().is_empty(),
         Kind::Tool(runs) => runs.is_empty(),
     };
@@ -903,6 +948,7 @@ fn append_item(inner: &mut Inner, kind: Kind, streaming: bool) -> Option<u64> {
             streaming: false,
             tool_summary: String::new(),
             tool_detail: String::new(),
+            images: Vec::new(),
         },
         Kind::Agent(body) => ChatItem {
             id,
@@ -911,6 +957,7 @@ fn append_item(inner: &mut Inner, kind: Kind, streaming: bool) -> Option<u64> {
             streaming,
             tool_summary: String::new(),
             tool_detail: String::new(),
+            images: Vec::new(),
         },
         Kind::Note { body, detail } => ChatItem {
             id,
@@ -919,6 +966,7 @@ fn append_item(inner: &mut Inner, kind: Kind, streaming: bool) -> Option<u64> {
             streaming: false,
             tool_summary: String::new(),
             tool_detail: detail,
+            images: Vec::new(),
         },
         Kind::Tool(runs) => {
             let (ok, fail) = tool_counts(&runs);
@@ -934,6 +982,7 @@ fn append_item(inner: &mut Inner, kind: Kind, streaming: bool) -> Option<u64> {
                 streaming: false,
                 tool_summary: tool_summary(ok, fail),
                 tool_detail: detail,
+                images: tool_images(inner, &runs),
             }
         }
     };
@@ -974,13 +1023,14 @@ fn submit(inner: &mut Inner, raw: TurnIn) {
     let workspace = inner.workspace.clone();
     let path = inner.current.clone();
     ensure_run(inner, workspace.clone(), path);
+    let display = turn.display();
     let working = {
         let Some(run) = run_mut(&mut inner.runs, &workspace) else {
             return;
         };
         if run.working {
-            run.mailbox.idle(turn.clone());
-            run.queued.push(turn);
+            run.queued.push(turn.clone());
+            run.mailbox.idle(turn);
             true
         } else {
             run.working = true;
@@ -992,8 +1042,22 @@ fn submit(inner: &mut Inner, raw: TurnIn) {
             false
         }
     };
-    if working {
+    // prompt_user writes the user entry but does not emit LogLine::User.
+    // Show it now so a later disk reload cannot drop it.
+    if !working {
+        show_user(inner, &workspace, &display);
+    }
+}
+
+/// Put a user bubble on the open thread, or remember it until that room is shown.
+fn show_user(inner: &mut Inner, workspace: &Path, text: &str) {
+    update_preview(inner, workspace, &format_preview("You", text));
+    if same_dir(workspace, &inner.workspace) {
+        append_item(inner, Kind::User(text.to_string()), false);
         return;
+    }
+    if let Some(run) = run_mut(&mut inner.runs, workspace) {
+        run.pending_user.push(text.to_string());
     }
 }
 
@@ -1027,55 +1091,48 @@ fn abort_current(inner: &mut Inner) {
     }
 }
 
+/// Pull one queued turn. The agent mailbox keeps its own copy and only learns
+/// about a removal when that turn is actually taken (`steer`) or the round ends.
+fn queue_take(inner: &mut Inner, i: usize) -> Option<UserTurn> {
+    let workspace = inner.workspace.clone();
+    let run = run_mut(&mut inner.runs, &workspace)?;
+    if i >= run.queued.len() {
+        return None;
+    }
+    Some(run.queued.remove(i))
+}
+
 fn queue_send_now(inner: &mut Inner, i: usize) {
+    let Some(turn) = queue_take(inner, i) else {
+        return;
+    };
     let workspace = inner.workspace.clone();
     if let Some(run) = run_mut(&mut inner.runs, &workspace) {
-        if i < run.queued.len() {
-            let turn = run.queued.remove(i);
-            run.mailbox.set_idle(run.queued.clone());
-            run.mailbox.steer(turn.clone());
-            run.steered.push(turn);
-        }
+        run.mailbox.steer(turn.clone());
+        run.steered.push(turn);
     }
 }
 
 fn queue_edit(inner: &mut Inner, i: usize) -> TurnOut {
-    let workspace = inner.workspace.clone();
-    let mut pulled = TurnOut::empty();
-    if let Some(run) = run_mut(&mut inner.runs, &workspace) {
-        if i < run.queued.len() {
-            let turn = run.queued.remove(i);
-            run.mailbox.set_idle(run.queued.clone());
-            pulled = TurnOut::from_turn(&turn);
-        }
-    }
-    pulled
+    queue_take(inner, i)
+        .map(|turn| TurnOut::from_turn(&turn))
+        .unwrap_or_else(TurnOut::empty)
 }
 
 fn queue_move(inner: &mut Inner, i: usize, delta: i32) {
     let workspace = inner.workspace.clone();
-    let mut dest = None;
-    if let Some(run) = run_mut(&mut inner.runs, &workspace) {
-        let j = i as i32 + delta;
-        if i < run.queued.len() && j >= 0 && (j as usize) < run.queued.len() {
-            run.queued.swap(i, j as usize);
-            run.mailbox.set_idle(run.queued.clone());
-            dest = Some(j as usize);
-        }
-    }
-    if let Some(j) = dest {
-        inner.queue_flash = Some((j, Instant::now() + QUEUE_FLASH));
+    let j = i as i32 + delta;
+    let Some(run) = run_mut(&mut inner.runs, &workspace) else {
+        return;
+    };
+    if i < run.queued.len() && j >= 0 && (j as usize) < run.queued.len() {
+        run.queued.swap(i, j as usize);
+        inner.queue_flash = Some((j as usize, Instant::now() + QUEUE_FLASH));
     }
 }
 
 fn queue_drop(inner: &mut Inner, i: usize) {
-    let workspace = inner.workspace.clone();
-    if let Some(run) = run_mut(&mut inner.runs, &workspace) {
-        if i < run.queued.len() {
-            run.queued.remove(i);
-            run.mailbox.set_idle(run.queued.clone());
-        }
-    }
+    let _ = queue_take(inner, i);
 }
 
 fn update_preview(inner: &mut Inner, workspace: &Path, preview: &str) {
@@ -1093,6 +1150,14 @@ fn is_working(inner: &Inner, workspace: &Path) -> bool {
         .runs
         .iter()
         .any(|(p, r)| r.working && same_dir(p, workspace))
+}
+
+/// Round still owes the user a stop button: the worker is in a turn, or the
+/// reply has not finished landing in the transcript yet.
+fn is_busy(inner: &Inner, workspace: &Path) -> bool {
+    inner.runs.iter().any(|(p, r)| {
+        same_dir(p, workspace) && (r.working || !r.draft.is_empty() || !r.thinking.is_empty())
+    })
 }
 
 fn is_error(inner: &Inner, workspace: &Path) -> bool {
@@ -1240,8 +1305,9 @@ fn drain(inner: &mut Inner) {
                         run.steered.remove(i);
                     }
                     clear_think(run);
-                    if same_dir(path, &current) {
-                        previews.push((path.clone(), format_preview("You", t)));
+                    previews.push((path.clone(), format_preview("You", t)));
+                    if !same_dir(path, &current) {
+                        run.pending_user.push(t.clone());
                     }
                 }
                 LogLine::Tools { .. } => {
@@ -1380,10 +1446,10 @@ fn remember_seen(inner: &mut Inner, workspace: &Path, file: PathBuf, len: u64, n
 }
 
 fn run_owns(workspace: &Path, inner: &Inner) -> bool {
-    inner
-        .runs
-        .iter()
-        .any(|(p, r)| same_dir(p, workspace) && (r.working || !r.draft.is_empty()))
+    inner.runs.iter().any(|(p, r)| {
+        same_dir(p, workspace)
+            && (r.working || !r.draft.is_empty() || !r.pending_user.is_empty())
+    })
 }
 
 fn log_is_error(line: &LogLine) -> bool {
@@ -1470,8 +1536,21 @@ fn ensure_run(inner: &mut Inner, workspace: PathBuf, session_path: PathBuf) {
             match cmd {
                 GuiCmd::Shutdown => break,
                 GuiCmd::Prompt { turn, seq } => {
-                    if let Err(e) = rt.block_on(prompt_user(&mut agent, turn)) {
-                        let _ = err_tx.send(LogLine::Dim(format!("{e:#}")));
+                    // A tool failure (screenshot read, bad image bytes) must
+                    // not kill this thread — the next prompt would never run.
+                    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        rt.block_on(prompt_user(&mut agent, turn))
+                    }));
+                    match outcome {
+                        Ok(Ok(())) => {}
+                        Ok(Err(e)) => {
+                            let _ = err_tx.send(LogLine::Dim(format!("{e:#}")));
+                        }
+                        Err(_) => {
+                            let _ = err_tx.send(LogLine::Dim(
+                                "(agent stopped on a tool panic; send again)".into(),
+                            ));
+                        }
                     }
                     let _ = done_tx.send(seq);
                 }
@@ -1494,6 +1573,7 @@ fn ensure_run(inner: &mut Inner, workspace: PathBuf, session_path: PathBuf) {
             think_hide_at: None,
             queued: Vec::new(),
             steered: Vec::new(),
+            pending_user: Vec::new(),
             last_input,
         },
     );
@@ -1555,6 +1635,19 @@ fn apply_log(inner: &mut Inner, line: LogLine) {
     }
 }
 
+fn tool_run_from_call(c: &fun_core::session::Call, results: &[&fun_core::session::ToolResult]) -> ToolRun {
+    let res = results.iter().find(|t| t.id == c.id);
+    ToolRun {
+        name: title_case(&c.name),
+        args: args_repr(&c.args),
+        detail: match res.filter(|t| t.is_error) {
+            Some(t) => t.content.clone(),
+            None => String::new(),
+        },
+        is_error: res.is_some_and(|t| t.is_error),
+    }
+}
+
 fn replay(session: &Session) -> Vec<Kind> {
     let mut out = Vec::new();
     let mut i = 0;
@@ -1583,18 +1676,7 @@ fn replay(session: &Session) -> Vec<Kind> {
                     }
                     let mut runs: Vec<ToolRun> = calls
                         .iter()
-                        .map(|c| {
-                            let res = results.iter().find(|t| t.id == c.id);
-                            ToolRun {
-                                name: title_case(&c.name),
-                                args: args_repr(&c.args),
-                                detail: match res.filter(|t| t.is_error) {
-                                    Some(t) => t.content.clone(),
-                                    None => String::new(),
-                                },
-                                is_error: res.is_some_and(|t| t.is_error),
-                            }
-                        })
+                        .map(|c| tool_run_from_call(c, &results))
                         .collect();
                     i = j;
                     while i < entries.len() {
@@ -1612,18 +1694,7 @@ fn replay(session: &Session) -> Vec<Kind> {
                                         break;
                                     }
                                 }
-                                runs.extend(calls.iter().map(|c| {
-                                    let res = more.iter().find(|t| t.id == c.id);
-                                    ToolRun {
-                                        name: title_case(&c.name),
-                                        args: args_repr(&c.args),
-                                        detail: match res.filter(|t| t.is_error) {
-                                            Some(t) => t.content.clone(),
-                                            None => String::new(),
-                                        },
-                                        is_error: res.is_some_and(|t| t.is_error),
-                                    }
-                                }));
+                                runs.extend(calls.iter().map(|c| tool_run_from_call(c, &more)));
                                 i = k;
                             }
                             _ => break,
@@ -1653,6 +1724,7 @@ fn merge_tools(inner: &mut Inner, runs: Vec<ToolRun>) {
     if runs.is_empty() {
         return;
     }
+    let images = tool_images(inner, &runs);
     if let Some(block) = inner.last_tool.as_mut() {
         block.runs.extend(runs);
         let (ok, fail) = tool_counts(&block.runs);
@@ -1662,10 +1734,99 @@ fn merge_tools(inner: &mut Inner, runs: Vec<ToolRun>) {
         if let Some(item) = inner.items.iter_mut().find(|i| i.id == id) {
             item.tool_summary = summary;
             item.tool_detail = detail;
+            item.images.extend(images);
         }
         return;
     }
     append_item(inner, Kind::Tool(runs), false);
+}
+
+/// Load paths of pictures a successful Read just opened so the thread can show them.
+fn tool_images(inner: &Inner, runs: &[ToolRun]) -> Vec<ChatImage> {
+    let mut out = Vec::new();
+    for run in runs {
+        if run.is_error || !run.name.eq_ignore_ascii_case("read") {
+            continue;
+        }
+        let Some(path) = read_path_arg(&run.args) else {
+            continue;
+        };
+        let Ok(path) = resolve_display_path(&inner.workspace, &path) else {
+            continue;
+        };
+        let Ok(bytes) = std::fs::read(&path) else {
+            continue;
+        };
+        if sniff_image(&bytes).is_none() {
+            continue;
+        }
+        if bytes.len() > fun_core::session::MAX_IMAGE_BYTES {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "image".into());
+        out.push(ChatImage {
+            name,
+            path: path.to_string_lossy().into_owned(),
+        });
+    }
+    out
+}
+
+fn read_path_arg(args: &str) -> Option<String> {
+    let rest = args
+        .split_once("path=")
+        .map(|(_, rest)| rest)
+        .or_else(|| args.split_once("path =").map(|(_, rest)| rest))?;
+    let rest = rest.trim_start();
+    if let Some(stripped) = rest.strip_prefix('"') {
+        let mut out = String::new();
+        let mut chars = stripped.chars();
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                match chars.next() {
+                    Some('n') => out.push('\n'),
+                    Some('r') => out.push('\r'),
+                    Some('t') => out.push('\t'),
+                    Some('0') => out.push('\0'),
+                    Some('u') => {
+                        let hex: String = chars.by_ref().take(4).collect();
+                        if let Some(u) = u32::from_str_radix(&hex, 16)
+                            .ok()
+                            .and_then(char::from_u32)
+                        {
+                            out.push(u);
+                        }
+                    }
+                    Some(n) => out.push(n),
+                    None => {}
+                }
+                continue;
+            }
+            if c == '"' {
+                break;
+            }
+            out.push(c);
+        }
+        return (!out.is_empty()).then_some(out);
+    }
+    let end = rest.find([',', ' ', ')']).unwrap_or(rest.len());
+    let path = rest[..end].trim();
+    (!path.is_empty()).then(|| path.to_string())
+}
+
+fn resolve_display_path(workspace: &Path, raw: &str) -> Result<PathBuf, ()> {
+    let path = Path::new(raw);
+    let joined = if path.is_absolute() {
+        path.to_path_buf()
+    } else if workspace.as_os_str().is_empty() {
+        return Err(());
+    } else {
+        workspace.join(path)
+    };
+    Ok(joined)
 }
 
 fn tool_detail(runs: &[ToolRun]) -> String {
